@@ -10,6 +10,7 @@ const (
 	socks_port    = ":1080"
 	reqAuthMethod = auth_logpass
 	debug         = true
+	bufferSize    = 1024 * 128
 
 	socks_ver      = 0x05 //SOCKS5
 	auth_noauth    = 0x00 //no authentication
@@ -144,8 +145,6 @@ func auth(login, pass string) bool {
 	var userList map[string]string = map[string]string{
 		"user1": "abc",
 		"user2": "def",
-		"user3": "ghi",
-		"user4": "jkl",
 	}
 	for clogin, cpass := range userList {
 		if login == clogin && pass == cpass {
@@ -176,10 +175,12 @@ func cmdHandler(userConn net.Conn) {
 						data := append([]byte{socks_ver, status, 0, addrtype_IPv4}, buff[4:n]...)
 						userConn.Write(data)
 						if status == status_ok {
+							fmt.Println("cmdHandler: connection established", userConn.RemoteAddr(), " -> ", serverConn.RemoteAddr())
 							go connectionHandler(serverConn, userConn)
 							go connectionHandler(userConn, serverConn)
 							return
 						} else {
+							fmt.Println("cmdHandler error: connection error", userConn.RemoteAddr(), " X ", addr+port)
 							userConn.Close()
 							if serverConn != nil { //if host is unavailable, connection can doesn't exist
 								serverConn.Close()
@@ -231,15 +232,15 @@ func establishConnection(addr, port string) (net.Conn, byte) {
 	}
 }
 
-func connectionHandler(conn1, conn2 net.Conn) {
-	input := make([]byte, 1024*128)
+func connectionHandler(inputConn, outputConn net.Conn) {
+	input := make([]byte, bufferSize)
 	for {
-		n, err := conn1.Read(input)
+		n, err := inputConn.Read(input)
 		if n == 0 || err != nil {
-			conn1.Close()
-			conn2.Close()
+			inputConn.Close()
+			outputConn.Close()
 			return
 		}
-		conn2.Write(input[:n])
+		outputConn.Write(input[:n])
 	}
 }
