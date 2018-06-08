@@ -10,7 +10,7 @@ import (
 const (
 	socks_port    = ":1080"
 	reqAuthMethod = auth_logpass
-	debug         = true
+	verbose       = false
 	bufferSize    = 1024 * 16
 	timeout       = 300
 
@@ -54,7 +54,9 @@ func main() {
 			closeC(conn)
 			continue
 		}
-		log.Println("New connection accepted: ", conn.RemoteAddr())
+		if verbose {
+			log.Println("New connection accepted: ", conn.RemoteAddr())
+		}
 		go greetingHandler(conn)
 		go timeoutHandler(conn)
 	}
@@ -64,7 +66,9 @@ func greetingHandler(conn net.Conn) {
 	buff := make([]byte, 64)
 	n, err := conn.Read(buff)
 	if n == 0 || err != nil { //connection error
-		log.Println("greetingHandler connection closed: ", err, conn.RemoteAddr())
+		if verbose {
+			log.Println("greetingHandler connection closed: ", err, conn.RemoteAddr())
+		}
 		closeC(conn)
 		return
 	}
@@ -74,7 +78,9 @@ func greetingHandler(conn net.Conn) {
 				authMethods := buff[2 : buff[1]+2]
 				for _, method := range authMethods {
 					if method == reqAuthMethod {
-						log.Println("greetingHandler: chosen method ", reqAuthMethod, conn.RemoteAddr())
+						if verbose {
+							log.Println("greetingHandler: chosen method ", reqAuthMethod, conn.RemoteAddr())
+						}
 						data := []byte{socks_ver, reqAuthMethod}
 						conn.Write(data)
 						switch reqAuthMethod {
@@ -86,19 +92,25 @@ func greetingHandler(conn net.Conn) {
 						return
 					}
 				}
-				log.Println("greetingHandler error: unsupported auth method", conn.RemoteAddr())
+				if verbose {
+					log.Println("greetingHandler error: unsupported auth method", conn.RemoteAddr())
+				}
 				data := []byte{socks_ver, auth_error}
 				conn.Write(data)
 				closeC(conn)
 				return
 			}
 		} else {
-			log.Println("greetingHandler error: unsupported socks version ", buff[0], conn.RemoteAddr())
+			if verbose {
+				log.Println("greetingHandler error: unsupported socks version ", buff[0], conn.RemoteAddr())
+			}
 			closeC(conn)
 			return
 		}
 	}
-	log.Println("greetingHandler error: input pocket is broken", conn.RemoteAddr())
+	if verbose {
+		log.Println("greetingHandler error: input pocket is broken", conn.RemoteAddr())
+	}
 	closeC(conn)
 	return
 }
@@ -107,7 +119,9 @@ func authHandler(conn net.Conn) {
 	buff := make([]byte, 512)
 	n, err := conn.Read(buff)
 	if n == 0 || err != nil { //connection error
-		log.Println("authHandler connection closed: ", err, conn.RemoteAddr())
+		if verbose {
+			log.Println("authHandler connection closed: ", err, conn.RemoteAddr())
+		}
 		closeC(conn)
 		return
 	}
@@ -119,26 +133,36 @@ func authHandler(conn net.Conn) {
 			if n > int(logLen+passLen+2) { //we need at least 2+logLen+passLen bytes of data
 				pass := string(buff[logLen+3 : logLen+passLen+3])
 				if auth(login, pass) {
-					log.Println("authHandler: correct log/pass ", login, pass, conn.RemoteAddr())
+					if verbose {
+						log.Println("authHandler: correct log/pass ", login, pass, conn.RemoteAddr())
+					}
 					data := []byte{lpauth_ver, lpauth_succ}
 					conn.Write(data)
 					cmdHandler(conn)
 					return
 				} else {
-					log.Println("authHandler error: incorrect log/pass ", login, pass, conn.RemoteAddr())
+					if verbose {
+						log.Println("authHandler error: incorrect log/pass ", login, pass, conn.RemoteAddr())
+					}
 					data := []byte{lpauth_ver, lpauth_unsucc}
 					conn.Write(data)
-					log.Println("authHandler connection closed:", conn.RemoteAddr())
+					if verbose {
+						log.Println("authHandler connection closed:", conn.RemoteAddr())
+					}
 					closeC(conn)
 					return
 				}
 			}
 		}
-		log.Println("authHandler error: input pocket is broken", conn.RemoteAddr())
+		if verbose {
+			log.Println("authHandler error: input pocket is broken", conn.RemoteAddr())
+		}
 		closeC(conn)
 		return
 	} else {
-		log.Println("authHandler error: unsupported lpauth version ", buff[0], conn.RemoteAddr())
+		if verbose {
+			log.Println("authHandler error: unsupported lpauth version ", buff[0], conn.RemoteAddr())
+		}
 		closeC(conn)
 	}
 }
@@ -161,7 +185,9 @@ func cmdHandler(userConn net.Conn) {
 	buff := make([]byte, 512)
 	n, err := userConn.Read(buff)
 	if n == 0 || err != nil {
-		log.Println("cmdHandler connection closed: ", err, userConn.RemoteAddr())
+		if verbose {
+			log.Println("cmdHandler connection closed: ", err, userConn.RemoteAddr())
+		}
 		closeC(userConn)
 		return
 	}
@@ -178,48 +204,64 @@ func cmdHandler(userConn net.Conn) {
 						data := append([]byte{socks_ver, status, 0, addrtype_IPv4}, buff[4:n]...)
 						userConn.Write(data)
 						if status == status_ok {
-							log.Println("cmdHandler: connection established", userConn.RemoteAddr(), " -> ", serverConn.RemoteAddr())
+							if verbose {
+								log.Println("cmdHandler: connection established", userConn.RemoteAddr(), " -> ", serverConn.RemoteAddr())
+							}
 							go connectionHandler(serverConn, userConn)
 							go connectionHandler(userConn, serverConn)
 							return
 						} else {
-							log.Println("cmdHandler error: connection error", userConn.RemoteAddr(), " X ", addr+port)
+							if verbose {
+								log.Println("cmdHandler error: connection error", userConn.RemoteAddr(), " X ", addr+port)
+							}
 							closeC(userConn)
 							closeC(serverConn) //if host is unavailable, connection can doesn't exist
 							return
 						}
 					} else {
-						log.Println("cmdHandler error: input pocket is broken", userConn.RemoteAddr())
+						if verbose {
+							log.Println("cmdHandler error: input pocket is broken", userConn.RemoteAddr())
+						}
 						closeC(userConn)
 						return
 					}
 				case addrtype_DN:
-					log.Println("cmdHandler error: unsupported addres type ", buff[3], userConn.RemoteAddr())
+					if verbose {
+						log.Println("cmdHandler error: unsupported addres type ", buff[3], userConn.RemoteAddr())
+					}
 					data := []byte{socks_ver, status_addrerr, 0}
 					userConn.Write(data)
 					closeC(userConn)
 					return
 				default:
-					log.Println("cmdHandler error: unsupported addres type ", buff[3], userConn.RemoteAddr())
+					if verbose {
+						log.Println("cmdHandler error: unsupported addres type ", buff[3], userConn.RemoteAddr())
+					}
 					data := []byte{socks_ver, status_addrerr, 0}
 					userConn.Write(data)
 					closeC(userConn)
 					return
 				}
 			default:
-				log.Println("cmdHandler error: unsupported command ", buff[1], userConn.RemoteAddr())
+				if verbose {
+					log.Println("cmdHandler error: unsupported command ", buff[1], userConn.RemoteAddr())
+				}
 				data := []byte{socks_ver, status_cmderr, 0}
 				userConn.Write(data)
 				closeC(userConn)
 				return
 			}
 		} else {
-			log.Println("cmdHandler error: unsupported socks version ", buff[0], userConn.RemoteAddr())
+			if verbose {
+				log.Println("cmdHandler error: unsupported socks version ", buff[0], userConn.RemoteAddr())
+			}
 			closeC(userConn)
 			return
 		}
 	}
-	log.Println("cmdHandler error: input pocket is broken", userConn.RemoteAddr())
+	if verbose {
+		log.Println("cmdHandler error: input pocket is broken", userConn.RemoteAddr())
+	}
 	closeC(userConn)
 }
 
@@ -249,7 +291,9 @@ func connectionHandler(inputConn, outputConn net.Conn) {
 
 func timeoutHandler(conn net.Conn) {
 	time.Sleep(timeout * time.Second)
-	log.Println("conn timeout")
+	if verbose {
+		log.Println("conn timeout")
+	}
 	closeC(conn)
 }
 
