@@ -4,6 +4,7 @@ import (
 	"log"
 	"net"
 	"strconv"
+	"time"
 )
 
 const (
@@ -11,6 +12,7 @@ const (
 	reqAuthMethod = auth_logpass
 	debug         = true
 	bufferSize    = 1024 * 16
+	timeout       = 300
 
 	socks_ver      = 0x05 //SOCKS5
 	auth_noauth    = 0x00 //no authentication
@@ -56,6 +58,7 @@ func main() {
 		}
 		log.Println("New connection accepted: ", conn.RemoteAddr())
 		go greetingHandler(conn)
+		go timeoutHandler(conn)
 	}
 }
 
@@ -250,6 +253,7 @@ func establishConnection(addr, port string) (net.Conn, byte) {
 	conn, err := net.Dial("tcp", addr+port)
 	if err != nil {
 		log.Println(err)
+		go timeoutHandler(conn)
 		return conn, status_hosterr
 	} else {
 		return conn, status_ok
@@ -272,3 +276,12 @@ func connectionHandler(inputConn, outputConn net.Conn) {
 		outputConn.Write(input[:n])
 	}
 }
+
+func timeoutHandler(conn net.Conn) {
+	time.Sleep(timeout * time.Second)
+	log.Println("conn timeout")
+	if conn != nil {
+		conn.Close()
+	}
+}
+
